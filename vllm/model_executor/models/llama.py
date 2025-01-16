@@ -357,8 +357,13 @@ class LlamaModel(nn.Module):
 
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
+            
+            import os
+            kv_cache_layer_id = i - self.start_layer
+            if os.environ.get("PREFILL_ONLY"):
+                kv_cache_layer_id = 0
             hidden_states, residual = layer(positions, hidden_states,
-                                            kv_caches[i - self.start_layer],
+                                            kv_caches[kv_cache_layer_id],
                                             attn_metadata, residual)
 
         if not get_pp_group().is_last_rank:

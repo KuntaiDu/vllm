@@ -36,6 +36,10 @@ class CacheEngine:
         # Models like Jamba, have mixed typed layers, E.g Mamba
         self.num_attention_layers = model_config.get_num_layers_by_block_type(
             parallel_config, LayerBlockType.attention)
+
+        import os
+        if os.environ.get("PREFILL_ONLY"):
+            self.num_attention_layers = 1
         self.num_kv_heads = model_config.get_num_kv_heads(parallel_config)
 
         self.block_size = cache_config.block_size
@@ -107,6 +111,10 @@ class CacheEngine:
         num_heads = model_config.get_num_kv_heads(parallel_config)
         num_attention_layers = model_config.get_num_layers_by_block_type(
             parallel_config, LayerBlockType.attention)
+
+        import os
+        if os.environ.get("PREFILL_ONLY"):
+            num_attention_layers = 1
 
         key_cache_block = cache_config.block_size * num_heads * head_size
         value_cache_block = key_cache_block
