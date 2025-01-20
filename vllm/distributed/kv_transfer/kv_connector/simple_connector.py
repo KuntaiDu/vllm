@@ -296,7 +296,9 @@ class SimpleConnector(KVConnectorBase):
                 "[rank%d]: Successfully received all KVs and hidden "
                 "states, skip model forwarding.", torch.distributed.get_rank())
             hidden_or_intermediate_states = torch.cat(
-                hidden_or_intermediate_states_for_one_req, dim=0)
+                hidden_or_intermediate_states_for_one_req, 
+                dim=0
+            ).to(kv_caches[0].device)
 
         return hidden_or_intermediate_states, bypass_model_exec, model_input
 

@@ -47,6 +47,9 @@ class SimpleBuffer(KVLookupBufferBase):
         self.data_pipe = data_pipe
         self.request_handling_thread: Optional[threading.Thread] = None
 
+        # record tensor device
+        self.device = data_pipe.device
+
         self.normal_signal = torch.tensor([0], device="cpu")
         self.end_signal = None
 
@@ -104,15 +107,15 @@ class SimpleBuffer(KVLookupBufferBase):
                        hidden: torch.Tensor):
 
         if isinstance(input_tokens, torch.Tensor):
-            input_tokens = input_tokens.clone()
+            input_tokens = input_tokens.to(self.device).clone()
         if isinstance(roi, torch.Tensor):
-            roi = roi.clone()
+            roi = roi.to(self.device).clone()
         if isinstance(key, torch.Tensor):
-            key = key.clone()
+            key = key.to(self.device).clone()
         if isinstance(value, torch.Tensor):
-            value = value.clone()
+            value = value.to(self.device).clone()
         if isinstance(hidden, torch.Tensor):
-            hidden = hidden.clone()
+            hidden = hidden.to(self.device).clone()
 
         buffer_item = [input_tokens, roi, key, value, hidden]
 
