@@ -133,6 +133,14 @@ class NaiveBlockAllocator(BlockAllocator):
             raise BlockAllocator.NoFreeBlocksError()
 
         block_id = self._free_block_indices.popleft()
+        
+        import os
+        if self.device == "GPU" and os.environ.get('NON_CONSECUTIVE_ALLOC'):
+            # make GPU block allocation non-contiguous.
+            for i in range(2):
+                self._free_block_indices.append(block_id)
+                block_id = self._free_block_indices.popleft()
+        
         self._refcounter.incr(block_id)
         return block_id
 

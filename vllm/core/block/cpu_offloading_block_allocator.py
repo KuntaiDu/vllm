@@ -87,6 +87,9 @@ class CpuOffloadingBlockAllocator(CpuGpuBlockAllocator):
             block_size=block_size,
             block_ids=cpu_block_ids,
         )
+        
+        cpu_allocator._hashless_allocator.device="CPU"
+        gpu_allocator._hashless_allocator.device="GPU"
 
         return CpuOffloadingBlockAllocator(
             cpu_block_allocator=cpu_allocator,

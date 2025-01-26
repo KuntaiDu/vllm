@@ -47,17 +47,21 @@ Commandline arguments:
 
 import random
 import time
+import numpy as np
 
 import torch
-
-from vllm import LLM, SamplingParams
 from vllm.utils import FlexibleArgumentParser
 
+
+
 execution_times = {}
+bs = None
 
 
-def build_result_dict(start_time, end_time, *args):
-    total_time = end_time - start_time
+def build_result_dict_swap(start_time, end_time, *args):
+
+    global bs
+    total_time = start_time.elapsed_time(end_time)
     length = -1
     if len(args) > 1 and isinstance(args[1], torch.Tensor):
         length = len(args[1])
@@ -65,23 +69,48 @@ def build_result_dict(start_time, end_time, *args):
     return {
         "start_time": start_time,
         "total_time": total_time,
-        "swap_len": length
+        "len": length * bs,
+    }
+
+def build_result_dict_forward(start_time, end_time, kwargs):
+
+    global bs
+    total_time = start_time.elapsed_time(end_time)
+
+    return {
+        "start_time": start_time,
+        "total_time": total_time,
+        "len": kwargs['input_ids'].shape[0],
     }
 
 
 def timing_decorator(func):
 
     def wrapper(*args, **kwargs):
+        
         global execution_times
-        torch.cuda.synchronize()
-        start_time = time.time()  # Record the start time
+        
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        # Record the start event
+        start_event.record()
         result = func(*args, **kwargs)  # Call the wrapped function
+        # Record the end event
+        end_event.record()
+
+        # Synchronize to make sure events are completed
         torch.cuda.synchronize()
-        end_time = time.time()  # Record the end time
+        
         if func.__name__ not in execution_times:
             execution_times[func.__name__] = []
 
-        res = build_result_dict(start_time, end_time, *args)
+        if "swap" in func.__name__:
+            res = build_result_dict_swap(start_event, end_event, *args)
+        elif "forward" in func.__name__:
+            res = build_result_dict_forward(start_event, end_event, kwargs)
+        else:
+            raise NotImplementedError(f"{func.__name__} not implemented")
         execution_times[func.__name__].append(res)
         return result  # Return the result of the original function
 
@@ -90,24 +119,22 @@ def timing_decorator(func):
 
 def process_timing_results():
     global execution_times
+
+    results = {}
     for key in execution_times:
         len_to_time = {}
         len_to_count = {}
         for item in execution_times[key]:
-            swap_len = item["swap_len"]
+            swap_len = item["len"]
             if swap_len not in len_to_time:
-                len_to_time[swap_len] = 0
-            len_to_time[swap_len] += item["total_time"]
-
-            if swap_len not in len_to_count:
-                len_to_count[swap_len] = 0
-            len_to_count[swap_len] += 1
+                len_to_time[swap_len] = []
+            len_to_time[swap_len].append(item["total_time"])
 
         for swap_len in len_to_time:
-            total_time = len_to_time[swap_len]
-            count = len_to_count[swap_len]
-            print(f"{key} on {swap_len} pages: "
-                  f"{(count * swap_len) / total_time} pages per second")
+            results[key + "_" + str(swap_len) + "_mean"] = np.mean(len_to_time[swap_len]).item()
+            results[key + "_" + str(swap_len) + "_std"] = np.std(len_to_time[swap_len]).item()
+
+    return results
 
 
 def test_long_document_qa(llm=None, sampling_params=None, prompts=None):
@@ -116,6 +143,7 @@ def test_long_document_qa(llm=None, sampling_params=None, prompts=None):
     llm.generate(prompts, sampling_params=sampling_params)
     end_time = time.time()
     print(f"cost time {end_time - start_time}")
+    return end_time - start_time
 
 
 def repeat_prompts(prompts, repeat_count):
@@ -125,10 +153,22 @@ def repeat_prompts(prompts, repeat_count):
 
 
 def main(args):
+
+    global bs
+    bs = args.block_size
+    
     if args.profile_swap_blocks:
         from vllm.worker.cache_engine import CacheEngine
         CacheEngine.swap_out = timing_decorator(CacheEngine.swap_out)
         CacheEngine.swap_in = timing_decorator(CacheEngine.swap_in)
+
+
+    if args.non_consecutive_alloc:
+        import os
+        os.environ['NON_CONSECUTIVE_ALLOC'] = '1'
+
+    from vllm import LLM, SamplingParams
+    
 
     random.seed(args.seed)
 
@@ -156,7 +196,12 @@ def main(args):
               swap_space=args.cpu_memory_gb,
               enable_chunked_prefill=False,
               gpu_memory_utilization=args.gpu_memory_utilization,
-              max_model_len=30000)
+              max_model_len=30000,
+              block_size=args.block_size)
+
+    if args.profile_forward:
+        llm.llm_engine.model_executor.driver_worker.model_runner.model.forward = \
+            timing_decorator(llm.llm_engine.model_executor.driver_worker.model_runner.model.forward)
 
     sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)
 
@@ -172,14 +217,19 @@ def main(args):
     random.shuffle(prompts)
 
     print("------start generating------")
-    test_long_document_qa(
+    runtime = test_long_document_qa(
         llm=llm,
         prompts=prompts,
         sampling_params=sampling_params,
     )
 
-    if args.profile_swap_blocks:
-        process_timing_results()
+    if args.profile_swap_blocks or args.profile_forward:
+        results = process_timing_results()
+        results['block_size'] = args.block_size
+        results['non_consecutive_alloc'] = args.non_consecutive_alloc
+        import yaml
+        with open("/root/trace/profile.yaml", "a") as f:
+            f.write(yaml.dump([results]))
 
 
 if __name__ == "__main__":
@@ -253,6 +303,22 @@ if __name__ == "__main__":
         '--profile-swap-blocks',
         action='store_true',
         help='Profile the swap_blocks function in the custom ops')
+
+    parser.add_argument(
+        '--profile-forward',
+        action='store_true',
+        help='Profile flash attention ops')
+
+    parser.add_argument(
+        '--non-consecutive-alloc',
+        action='store_true'
+    )
+
+    parser.add_argument(
+        '--block-size',
+        type=int,
+        default=16,
+    )
 
     args = parser.parse_args()
     main(args)
