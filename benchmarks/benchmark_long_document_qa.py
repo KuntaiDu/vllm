@@ -56,6 +56,7 @@ from vllm.utils import FlexibleArgumentParser
 
 execution_times = {}
 bs = None
+batch_sizes = []
 
 
 def build_result_dict_swap(start_time, end_time, *args):
@@ -76,6 +77,10 @@ def build_result_dict_forward(start_time, end_time, kwargs):
 
     global bs
     total_time = start_time.elapsed_time(end_time)
+    
+    global batch_sizes
+    p = kwargs['attn_metadata'].num_prefills
+    batch_sizes.append({'batch_size': p, 'forward_time': total_time})
 
     return {
         "start_time": start_time,
@@ -133,6 +138,7 @@ def process_timing_results():
         for swap_len in len_to_time:
             results[key + "_" + str(swap_len) + "_mean"] = np.mean(len_to_time[swap_len]).item()
             results[key + "_" + str(swap_len) + "_std"] = np.std(len_to_time[swap_len]).item()
+            results[key + "_" + str(swap_len) + "_sum"] = np.sum(len_to_time[swap_len]).item()
 
     return results
 
@@ -196,25 +202,29 @@ def main(args):
               swap_space=args.cpu_memory_gb,
               enable_chunked_prefill=False,
               gpu_memory_utilization=args.gpu_memory_utilization,
-              max_model_len=30000,
-              block_size=args.block_size)
+              max_model_len=21000,
+              block_size=args.block_size,
+              max_num_batched_tokens=21000*1,
+              max_num_seqs=100,)
+
+    sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)
+
+
+    
+
+    print("------warm up------")
+    for prompt in prompts:
+        llm.generate(prompt, sampling_params=sampling_params)
+        
+    prompts = repeat_prompts(prompts, args.repeat_count)
+    random.shuffle(prompts)
+    for i in range(len(prompts)):
+        prompts[i] = prompts[i] + f"{i}\nPlase tell me whether this content is sensitive or not."
 
     if args.profile_forward:
         llm.llm_engine.model_executor.driver_worker.model_runner.model.forward = \
             timing_decorator(llm.llm_engine.model_executor.driver_worker.model_runner.model.forward)
 
-    sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)
-
-    prompts = repeat_prompts(prompts, args.repeat_count)
-
-    print("------warm up------")
-    test_long_document_qa(
-        llm=llm,
-        prompts=prompts,
-        sampling_params=sampling_params,
-    )
-
-    random.shuffle(prompts)
 
     print("------start generating------")
     runtime = test_long_document_qa(
@@ -223,12 +233,17 @@ def main(args):
         sampling_params=sampling_params,
     )
 
+    global batch_sizes
+    breakpoint()
+
     if args.profile_swap_blocks or args.profile_forward:
         results = process_timing_results()
         results['block_size'] = args.block_size
         results['non_consecutive_alloc'] = args.non_consecutive_alloc
+        if hasattr(args, 'gpu_memory_utilization'):
+            results['gpu_memory_utilization'] = args.gpu_memory_utilization
         import yaml
-        with open("/root/trace/profile.yaml", "a") as f:
+        with open("/root/trace/profile_batch.yaml", "a") as f:
             f.write(yaml.dump([results]))
 
 
