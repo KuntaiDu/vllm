@@ -4,19 +4,20 @@ import os
 
 os.environ['PREFILL_ONLY'] = '1'
 os.environ['VLLM_ALLOW_LONG_MAX_MODEL_LEN'] = '1'
+# os.environ['CHUNK_SIZE'] = "2048"
 
-torch.cuda.set_per_process_memory_fraction(0.45, device=None)
+torch.cuda.set_per_process_memory_fraction(0.99, device=None)
 
-MLEN = 190000
+MLEN = 211000
+MLEN = 100000
 
 samp = vllm.SamplingParams(max_tokens=1)
 llm = vllm.LLM(model="meta-llama/Llama-3.1-8B-Instruct",
-               enable_chunked_prefill=True,
                enforce_eager=True,
                max_model_len=MLEN + 100,
-               gpu_memory_utilization=0.44,
+               gpu_memory_utilization=0.59,
                block_size=16,
-               max_num_batched_tokens=4096)
+               enable_chunked_prefill=False)
 
 output = llm.generate("Hi" * MLEN, samp)[0]
 

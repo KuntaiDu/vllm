@@ -56,6 +56,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
 
+import os
 
 class LlamaMLP(nn.Module):
 
@@ -88,11 +89,24 @@ class LlamaMLP(nn.Module):
                              "Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
-    def forward(self, x):
-        x, _ = self.gate_up_proj(x)
-        x = self.act_fn(x)
-        x, _ = self.down_proj(x)
-        return x
+    def forward(self, x_input):
+
+        if "CHUNK_SIZE" in os.environ:
+            chunk_size = int(os.environ["CHUNK_SIZE"])
+        else:
+            chunk_size = len(x_input)
+        
+        xs = list(x_input.split(chunk_size))
+        
+        
+        for i in range(len(xs)):
+            x = xs[i]
+            x, _ = self.gate_up_proj(x)
+            x = self.act_fn(x)
+            x, _ = self.down_proj(x)
+            xs[i][:] = x
+            
+        return x_input
 
 
 class LlamaAttention(nn.Module):
@@ -169,15 +183,13 @@ class LlamaAttention(nn.Module):
         )
 
         if hasattr(config, "interleaved_sliding_window"):
-            interleaved_sliding_window = config.interleaved_sliding_window
-            if isinstance(interleaved_sliding_window, int):
-                sliding_window = interleaved_sliding_window
-            elif isinstance(interleaved_sliding_window, list):
-                sw_idx = layer_idx % len(interleaved_sliding_window)
-                sliding_window = interleaved_sliding_window[sw_idx]
+            if isinstance(config.interleaved_sliding_window, int):
+                sliding_window = config.interleaved_sliding_window
+            elif isinstance(config.interleaved_sliding_window, list):
+                sw_idx = layer_idx % len(config.interleaved_sliding_window)
+                sliding_window = config.interleaved_sliding_window[sw_idx]
             else:
-                raise ValueError(
-                    f"{type(interleaved_sliding_window)} is not supported.")
+                raise ValueError(f"{type(sliding_window)} is not supported.")
         else:
             sliding_window = None
 
@@ -200,10 +212,25 @@ class LlamaAttention(nn.Module):
         attn_metadata: AttentionMetadata,
     ) -> torch.Tensor:
         qkv, _ = self.qkv_proj(hidden_states)
+        # del hidden_states
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
         q, k = self.rotary_emb(positions, q, k)
+
         attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
-        output, _ = self.o_proj(attn_output)
+
+        if "CHUNK_SIZE" in os.environ:
+            chunk_size = int(os.environ["CHUNK_SIZE"])
+        else:
+            chunk_size = len(attn_output)
+        
+        attn_outputs = list(attn_output.split(chunk_size))
+
+        for i in range(len(attn_outputs)):
+            x, _ = self.o_proj(attn_outputs[i])
+            attn_outputs[i][:] = x
+            
+        output = attn_output
+
         return output
 
 
@@ -358,13 +385,16 @@ class LlamaModel(nn.Module):
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             
-            import os
-            kv_cache_layer_id = i - self.start_layer
-            if os.environ.get("PREFILL_ONLY"):
-                kv_cache_layer_id = 0
-            hidden_states, residual = layer(positions, hidden_states,
-                                            kv_caches[kv_cache_layer_id],
-                                            attn_metadata, residual)
+            if "PREFILL_ONLY" in os.environ:
+                kv_caches_layer_id = 0
+            else:
+                kv_caches_layer_id = i - self.start_layer
+            try:
+                hidden_states, residual = layer(positions, hidden_states,
+                                                kv_caches[kv_caches_layer_id],
+                                                attn_metadata, residual)
+            except IndexError:
+                breakpoint()
 
         if not get_pp_group().is_last_rank:
             return IntermediateTensors({
@@ -457,9 +487,8 @@ class LlamaModel(nn.Module):
                 # which is consistent with the practice of setting
                 # scaling_factor = tensor_amax / FPtype_max
                 scaling_factor *= 2
-            if hasattr(layer_self_attn.attn, "_k_scale"):
-                layer_self_attn.attn._k_scale = scaling_factor
-                layer_self_attn.attn._v_scale = scaling_factor
+            if hasattr(layer_self_attn, "kv_scale"):
+                layer_self_attn.attn._kv_scale = scaling_factor
             else:
                 raise RuntimeError("Self attention has no KV cache scaling "
                                    "factor attribute!")
@@ -571,9 +600,21 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
+
+        torch.cuda.memory._record_memory_history(max_entries=100000)
+        
         model_output = self.model(input_ids, positions, kv_caches,
                                   attn_metadata, intermediate_tensors,
                                   inputs_embeds)
+
+        torch.cuda.synchronize()
+        torch.cuda.memory._dump_snapshot("/root/test/forward.pickle")
+        
+        import time
+        
+        time.sleep(3)
+
+        raise NotImplementedError
         return model_output
 
     def compute_logits(

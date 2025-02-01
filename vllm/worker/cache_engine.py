@@ -124,4 +124,5 @@ class CacheEngine:
         else:
             dtype = STR_DTYPE_TO_TORCH_DTYPE[cache_config.cache_dtype]
         dtype_size = get_dtype_size(dtype)
+
         return dtype_size * total
