@@ -181,7 +181,7 @@ def main(args):
     # append the document id at the beginning to avoid any of the document
     # being the prefix of other documents
     prompts = [
-        str(i) + ' '.join(['hi'] * args.document_length)
+        '-' * 100 + '\n' + str(i) + ' '.join(['hi'] * args.document_length)
         for i in range(args.num_documents)
     ]
 
@@ -204,7 +204,7 @@ def main(args):
               gpu_memory_utilization=args.gpu_memory_utilization,
               max_model_len=21000,
               block_size=args.block_size,
-              max_num_batched_tokens=21000*1,
+              max_num_batched_tokens=21000*4,
               max_num_seqs=100,)
 
     sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)

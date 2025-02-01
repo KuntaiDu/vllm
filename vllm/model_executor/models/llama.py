@@ -56,6 +56,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     make_empty_intermediate_tensors_factory, make_layers,
                     maybe_prefix)
 
+import os
 
 class LlamaMLP(nn.Module):
 
@@ -88,11 +89,19 @@ class LlamaMLP(nn.Module):
                              "Only silu is supported for now.")
         self.act_fn = SiluAndMul()
 
-    def forward(self, x):
-        x, _ = self.gate_up_proj(x)
-        x = self.act_fn(x)
-        x, _ = self.down_proj(x)
-        return x
+    def forward(self, x_input):
+        chunk_size = int(os.environ["CHUNK_SIZE"])
+        
+        xs = list(x_input.split(chunk_size))
+        
+        for i in range(len(xs)):
+            x = xs[i]
+            x, _ = self.gate_up_proj(x)
+            x = self.act_fn(x)
+            x, _ = self.down_proj(x)
+            xs[i] = x
+            
+        return torch.cat(xs)
 
 
 class LlamaAttention(nn.Module):

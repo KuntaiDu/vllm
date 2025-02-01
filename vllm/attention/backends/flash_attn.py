@@ -732,6 +732,24 @@ class FlashAttentionImpl(AttentionImpl):
 
                 key = key[:num_prefill_kv_tokens]
                 value = value[:num_prefill_kv_tokens]
+                
+                # if kv_cache.numel() > 0:
+                #     params = {
+                #         'q': query,
+                #         'k': key,
+                #         'v': value,
+                #         'cu_seqlens_q': q_seq_start_loc,
+                #         'cu_seqlens_k': k_seq_start_loc,
+                #         'max_seqlen_q': q_seq_len,
+                #         'max_seqlen_k': k_seq_len,
+                #         'softmax_scale': softmax_scale,
+                #         'causal': _get_causal_option(attn_type),  # Assuming this is a function that returns a causal setting
+                #         'window_size': window_size,
+                #         'alibi_slopes': alibi_slopes,
+                #         'softcap': logits_soft_cap,
+                #         'out': prefill_output
+                #     }
+                #     breakpoint()
 
                 flash_attn_varlen_func(
                     q=query,
@@ -754,6 +772,24 @@ class FlashAttentionImpl(AttentionImpl):
                     "Only decoder-only models support prefix caching")
                 assert prefill_meta.seq_lens is not None
                 max_seq_len = max(prefill_meta.seq_lens)
+                
+                params = {
+                    'q': query,
+                    'k': key_cache,
+                    'v': value_cache,
+                    'cu_seqlens_q': prefill_meta.query_start_loc,
+                    'max_seqlen_q': prefill_meta.max_query_len,
+                    'cu_seqlens_k': prefill_meta.seq_start_loc,
+                    'max_seqlen_k': max_seq_len,
+                    'softmax_scale': softmax_scale,
+                    'causal': True,  # Directly using a boolean value
+                    'window_size': window_size,
+                    'alibi_slopes': alibi_slopes,
+                    'block_table': prefill_meta.block_tables,
+                    'softcap': logits_soft_cap,
+                    'out': prefill_output
+                }
+                breakpoint()
                 flash_attn_varlen_func(  # noqa
                     q=query,
                     k=key_cache,
