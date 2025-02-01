@@ -93,20 +93,26 @@ class LlamaMLP(nn.Module):
 
         if "CHUNK_SIZE" in os.environ:
             chunk_size = int(os.environ["CHUNK_SIZE"])
+        
+            xs = list(x_input.split(chunk_size))
+            
+            
+            for i in range(len(xs)):
+                x = xs[i]
+                
+                xs[i][:] = x
+                
+            return x_input
+        
         else:
-            chunk_size = len(x_input)
-        
-        xs = list(x_input.split(chunk_size))
-        
-        
-        for i in range(len(xs)):
-            x = xs[i]
+            
+            x = x_input
+            
             x, _ = self.gate_up_proj(x)
             x = self.act_fn(x)
             x, _ = self.down_proj(x)
-            xs[i][:] = x
             
-        return x_input
+            return x
 
 
 class LlamaAttention(nn.Module):
@@ -220,18 +226,18 @@ class LlamaAttention(nn.Module):
 
         if "CHUNK_SIZE" in os.environ:
             chunk_size = int(os.environ["CHUNK_SIZE"])
-        else:
-            chunk_size = len(attn_output)
-        
-        attn_outputs = list(attn_output.split(chunk_size))
-
-        for i in range(len(attn_outputs)):
-            x, _ = self.o_proj(attn_outputs[i])
-            attn_outputs[i][:] = x
             
-        output = attn_output
+            attn_outputs = list(attn_output.split(chunk_size))
 
-        return output
+            for i in range(len(attn_outputs)):
+                x, _ = self.o_proj(attn_outputs[i])
+                attn_outputs[i][:] = x
+                
+            return attn_output
+            
+        else:
+            return self.o_proj(attn_output)[0]
+
 
 
 class LlamaDecoderLayer(nn.Module):
@@ -601,20 +607,21 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
 
-        torch.cuda.memory._record_memory_history(max_entries=100000)
+        profile_flag =  ("PROFILE" in os.environ)
+
+        if profile_flag:
+            torch.cuda.memory._record_memory_history(max_entries=100000)
         
         model_output = self.model(input_ids, positions, kv_caches,
                                   attn_metadata, intermediate_tensors,
                                   inputs_embeds)
 
-        torch.cuda.synchronize()
-        torch.cuda.memory._dump_snapshot("/root/test/forward.pickle")
+        if profile_flag:
+            torch.cuda.synchronize()
+            torch.cuda.memory._dump_snapshot("/root/test/forward.pickle")
+            raise NotImplementedError
         
-        import time
-        
-        time.sleep(3)
 
-        raise NotImplementedError
         return model_output
 
     def compute_logits(
