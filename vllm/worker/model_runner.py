@@ -58,6 +58,10 @@ from vllm.worker.model_runner_base import (
     _init_attn_metadata_from_tensor_dict,
     _init_sampling_metadata_from_tensor_dict, dump_input_when_exception)
 
+
+import yaml
+import os
+
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
 
@@ -1665,6 +1669,14 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         else:
             model_executable = self.model
 
+        if decode_meta is not None:
+            print_batchsize_flag =("PRINT_BATCH_SIZE" in os.environ)
+            if print_batchsize_flag:
+                with open("/root/tensormesh-measurements/batch_size.yaml", "a") as f: 
+                    f.write(yaml.dump([
+                        model_input.attn_metadata.num_decode_tokens
+                    ]))
+
         # Receive KV cache in distributed KV cache transfer setting
         # In disagg prefill setting, it will also recv hidden states and bypass
         # model forwarding
@@ -1954,6 +1966,8 @@ class CUDAGraphRunner(nn.Module):
     ) -> torch.Tensor:
         # KV caches are fixed tensors, so we don't need to copy them.
         del kv_caches
+
+        
 
         # Copy the input tensors to the input buffers.
         self.input_buffers["input_ids"].copy_(input_ids, non_blocking=True)

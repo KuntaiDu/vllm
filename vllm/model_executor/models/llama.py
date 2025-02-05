@@ -57,6 +57,7 @@ from .utils import (AutoWeightsLoader, PPMissingLayer, extract_layer_index,
                     maybe_prefix)
 
 import os
+import yaml
 
 class LlamaMLP(nn.Module):
 
