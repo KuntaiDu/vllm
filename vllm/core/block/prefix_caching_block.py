@@ -181,9 +181,6 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         self.metric_data.query(hit=False)
         self._block_pool.free_block(block)
 
-        # No cached block => Allocate a new block
-
-        allocate_new_block = False
         if "PREFILL_ONLY" in os.environ:
             # if this block is not frequently hit, return the placeholder block. 
             hit_frequency = 0
