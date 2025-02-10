@@ -13,6 +13,8 @@ from vllm.core.interfaces import AllocStatus, BlockSpaceManager
 from vllm.sequence import Sequence, SequenceGroup, SequenceStatus
 from vllm.utils import Device
 
+import os
+
 SeqId = int
 EncoderSeqId = str
 
@@ -110,6 +112,11 @@ class SelfAttnBlockSpaceManager(BlockSpaceManager):
                      num_lookahead_slots: int = 0) -> AllocStatus:
         # FIXME(woosuk): Here we assume that all sequences in the group share
         # the same prompt. This may not be true for preempted sequences.
+
+        # In prefill-only, we can always allocate the block, unless the context
+        # length is creater than MAX_MODEL_LEN.
+        if "PREFILL_ONLY" in os.environ:
+            return True
 
         check_no_caching_or_swa_for_blockmgr_encdec(self, seq_group)
 

@@ -100,6 +100,10 @@ class LlamaMLP(nn.Module):
             
             for i in range(len(xs)):
                 x = xs[i]
+
+                x, _ = self.gate_up_proj(x)
+                x = self.act_fn(x)
+                x, _ = self.down_proj(x)
                 
                 xs[i][:] = x
                 
@@ -392,7 +396,8 @@ class LlamaModel(nn.Module):
         for i in range(self.start_layer, self.end_layer):
             layer = self.layers[i]
             
-            if "PREFILL_ONLY" in os.environ:
+            # turn off this branch by False and.
+            if False and "PREFILL_ONLY" in os.environ:
                 kv_caches_layer_id = 0
             else:
                 kv_caches_layer_id = i - self.start_layer

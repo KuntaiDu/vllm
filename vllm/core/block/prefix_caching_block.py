@@ -14,6 +14,8 @@ from vllm.core.block.naive_block import (BlockPool, NaiveBlock,
 from vllm.core.evictor import EvictionPolicy, Evictor, make_evictor
 from vllm.sequence import Sequence
 
+import os
+
 PrefixHash = int
 
 # By default, we init our block access time as _DEFAULT_LAST_ACCESSED_TIME
@@ -117,6 +119,9 @@ class PrefixCachingBlockAllocator(BlockAllocator):
 
         self.metric_data = CacheMetricData()
 
+        self.prefill_only_block = self.allocate_mutable_block(prev_block=None)
+        self.prefill_only_block._cached_content_hash = 0
+
     # Implements Block.Factory.
     def _create_block(
         self,
@@ -177,6 +182,14 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         self._block_pool.free_block(block)
 
         # No cached block => Allocate a new block
+
+        allocate_new_block = False
+        if "PREFILL_ONLY" in os.environ:
+            # if this block is not frequently hit, return the placeholder block. 
+            hit_frequency = 0
+            if hit_frequency < 100:
+                return self.prefill_only_block
+            
         block = self.allocate_mutable_block(prev_block, extra_hash=extra_hash)
         block.append_token_ids(token_ids)
         return block
@@ -356,6 +369,11 @@ class PrefixCachingBlockAllocator(BlockAllocator):
     def free(self, block: Block, keep_block_object: bool = False) -> None:
         """Release the block (look at free_block_id(..) docs)
         """
+
+        if block.content_hash is not None and block.content_hash == 0:
+            # This block is prefill-only block.
+            # Do nothing.
+            return
         # Release the physical block index
         self._free_block_id(block)
 
