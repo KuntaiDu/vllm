@@ -1008,7 +1008,18 @@ class EngineArgs:
         return engine_args
 
     def create_model_config(self) -> ModelConfig:
-        return ModelConfig(
+        
+        from pathlib import Path
+        import pickle
+        cache_path = Path("/home/ubuntu/.cache/vllm/")
+        
+        if (cache_path / "model_config.pickle").exists():
+            with open(cache_path / "model_config.pickle", "rb") as f:
+                model_config = pickle.load(f)
+                return model_config
+        
+        
+        model_config = ModelConfig(
             model=self.model,
             task=self.task,
             # We know this is not None because we set it in __post_init__
@@ -1045,6 +1056,14 @@ class EngineArgs:
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
         )
+        
+        
+        
+        cache_path.mkdir(parents=True, exist_ok=True)
+        with open(cache_path / "model_config.pickle", "wb") as f:
+            pickle.dump(model_config, f)
+            
+        return model_config
 
     def create_load_config(self) -> LoadConfig:
         return LoadConfig(
