@@ -9,7 +9,7 @@ os.environ['CHUNK_SIZE'] = "2048"
 torch.cuda.set_per_process_memory_fraction(0.59, device=None)
 
 # MLEN = 211000
-MLEN = 100000
+MLEN = 230000
 
 samp = vllm.SamplingParams(max_tokens=1)
 llm = vllm.LLM(model="meta-llama/Llama-3.1-8B-Instruct",
@@ -19,6 +19,10 @@ llm = vllm.LLM(model="meta-llama/Llama-3.1-8B-Instruct",
                block_size=16,
                enable_chunked_prefill=False,
                enable_prefix_caching=True)
+
+output = llm.generate("Hi" * MLEN, samp)[0]
+
+print(output.outputs)
 
 output = llm.generate("Hi" * MLEN, samp)[0]
 

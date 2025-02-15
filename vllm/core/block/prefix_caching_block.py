@@ -120,7 +120,8 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         self.metric_data = CacheMetricData()
 
         self.prefill_only_block = self.allocate_mutable_block(prev_block=None)
-        self.prefill_only_block._cached_content_hash = 0
+        
+        self.exist_content_hash = set()
 
     # Implements Block.Factory.
     def _create_block(
@@ -180,17 +181,39 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             return block
         self.metric_data.query(hit=False)
         self._block_pool.free_block(block)
-
-        if "PREFILL_ONLY" in os.environ:
-            # if this block is not frequently hit, return the placeholder block. 
-            hit_frequency = 0
-            if hit_frequency < 100:
-                return self.prefill_only_block
             
-        block = self.allocate_mutable_block(prev_block, extra_hash=extra_hash)
-        block.append_token_ids(token_ids)
-        return block
-
+        if not "PREFILL_ONLY" in os.environ:
+            # allocate mutable block, append token id and return it.
+            block = self.allocate_mutable_block(prev_block, extra_hash=extra_hash)
+            block.append_token_ids(token_ids)
+            return block
+        
+        # allocate a fake block to get content hash
+        fake_block = self._block_pool.init_block(prev_block=prev_block,
+                                                 token_ids=[],
+                                                 block_size=self._block_size,
+                                                 physical_block_id=self.prefill_only_block.block_id,
+                                                 extra_hash=extra_hash)
+        fake_block._block.append_token_ids(token_ids)
+        fake_block._update_num_tokens_total()
+        
+        assert fake_block.content_hash is not None
+        
+        if self.allocate_for_hash(fake_block.content_hash):
+            # free fake block and fall back to previous logic
+            self._block_pool.free_block(fake_block)
+            block = self.allocate_mutable_block(prev_block, extra_hash=extra_hash)
+            block.append_token_ids(token_ids)
+            return block
+        else:
+            return fake_block
+    
+    def allocate_for_hash(self, content_hash: int) -> bool:
+        if content_hash in self.exist_content_hash:
+            return True
+        self.exist_content_hash.add(content_hash)
+        return False
+            
     def allocate_immutable_blocks(
             self,
             prev_block: Optional[Block],
@@ -223,7 +246,11 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         assert device is None
         assert_prefix_caching_block_or_none(prev_block)
 
-        block_id = self._allocate_block_id()
+        try:
+            block_id = self._allocate_block_id()
+        except BlockAllocator.NoFreeBlocksError:
+            block_id = self.prefill_only_block.block_id
+
         block = self._block_pool.init_block(prev_block=prev_block,
                                             token_ids=[],
                                             block_size=self._block_size,
@@ -269,7 +296,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         # Add the cached block to the evictor
         # (This keeps the cached block around so it can be reused)
         self.evictor.add(block_id, block.content_hash, block.num_tokens_total,
-                         self._block_tracker[block_id].last_accessed)
+                        self._block_tracker[block_id].last_accessed)
 
         # Stop tracking the block
         self._untrack_block_id(block_id)
@@ -367,8 +394,8 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         """Release the block (look at free_block_id(..) docs)
         """
 
-        if block.content_hash is not None and block.content_hash == 0:
-            # This block is prefill-only block.
+        if block.block_id == self.prefill_only_block.block_id:
+            # This block is fake block.
             # Do nothing.
             return
         # Release the physical block index
