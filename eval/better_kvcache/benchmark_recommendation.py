@@ -121,7 +121,7 @@ def main(args):
     ]
     
     prompts = [i+j for i in users for j in documents]
-    warmup = [i+j for i in users for j in documents[:2]]
+    # warmup = [i+j for i in users for j in documents[:2]]
 
     random.shuffle(prompts)
     
@@ -137,12 +137,13 @@ def main(args):
                max_model_len= args.user_history_length + args.document_length + 300,
                gpu_memory_utilization=0.59,
                block_size=16,
-               enable_chunked_prefill=not "PREFILL_ONLY" in os.environ,
-               enable_prefix_caching=True)
+               enable_chunked_prefill=not args.prefill_only,
+               enable_prefix_caching=True,
+               max_num_batched_tokens=54000 if args.prefill_only else None)
     
     sampling_params = SamplingParams(temperature=0, max_tokens=args.output_len)
     
-    llm.generate(warmup, sampling_params=sampling_params)
+    # llm.generate(warmup, sampling_params=sampling_params)
 
     print("------start generating------")
     benchmark_time = test_long_document_qa(
@@ -173,13 +174,13 @@ if __name__ == "__main__":
         type=int,
         # Roughly the number of tokens for a system paper,
         # excluding images
-        default=10000,
+        default=9000,
         help='Range of input lengths for sampling prompts,'
         'specified as "min:max" (e.g., "128:256").')
 
     parser.add_argument('--num-users',
                         type=int,
-                        default=5,
+                        default=6,
                         help='Range of input lengths for sampling prompts,'
                         'specified as "min:max" (e.g., "128:256").')
 

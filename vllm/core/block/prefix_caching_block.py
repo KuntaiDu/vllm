@@ -118,10 +118,11 @@ class PrefixCachingBlockAllocator(BlockAllocator):
             refcounter=self._refcounter.as_readonly())
 
         self.metric_data = CacheMetricData()
-
-        self.prefill_only_block = self.allocate_mutable_block(prev_block=None)
         
+        # allocate the 0th block as the placeholder block.
+        _ = self.allocate_mutable_block(prev_block=None)
         self.exist_content_hash = set()
+
 
     # Implements Block.Factory.
     def _create_block(
@@ -174,7 +175,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         assert block.content_hash is not None
 
         cached_block_id = self._cached_blocks.get(block.content_hash, None)
-        if cached_block_id is not None:
+        if cached_block_id is not None and cached_block_id != 0:
             self.metric_data.query(hit=True)
             block.block_id = cached_block_id
             self._incr_refcount_cached_block(block)
@@ -192,7 +193,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         fake_block = self._block_pool.init_block(prev_block=prev_block,
                                                  token_ids=[],
                                                  block_size=self._block_size,
-                                                 physical_block_id=self.prefill_only_block.block_id,
+                                                 physical_block_id=0,
                                                  extra_hash=extra_hash)
         fake_block._block.append_token_ids(token_ids)
         fake_block._update_num_tokens_total()
@@ -200,8 +201,10 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         assert fake_block.content_hash is not None
         
         if self.allocate_for_hash(fake_block.content_hash):
-            # free fake block and fall back to previous logic
+            # free fake block 
             self._block_pool.free_block(fake_block)
+            # attempt to allocate a new block. This will allocate a fake block
+            # if there are no free blocks.
             block = self.allocate_mutable_block(prev_block, extra_hash=extra_hash)
             block.append_token_ids(token_ids)
             return block
@@ -249,7 +252,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         try:
             block_id = self._allocate_block_id()
         except BlockAllocator.NoFreeBlocksError:
-            block_id = self.prefill_only_block.block_id
+            block_id = 0
 
         block = self._block_pool.init_block(prev_block=prev_block,
                                             token_ids=[],
@@ -266,6 +269,9 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         block.computed = True
 
         block_id = block.block_id
+        if block_id == 0:
+            # this is a fake block. Do nothing.
+            return
         assert block_id is not None
 
         refcount = self._refcounter.incr(block_id)
@@ -394,7 +400,7 @@ class PrefixCachingBlockAllocator(BlockAllocator):
         """Release the block (look at free_block_id(..) docs)
         """
 
-        if block.block_id == self.prefill_only_block.block_id:
+        if block.block_id == 0:
             # This block is fake block.
             # Do nothing.
             return
