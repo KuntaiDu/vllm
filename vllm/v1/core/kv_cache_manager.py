@@ -10,6 +10,8 @@ from vllm.v1.core.kv_cache_utils import (BlockHashType, FreeKVCacheBlockQueue,
                                          hash_request_tokens)
 from vllm.v1.request import Request, RequestStatus
 
+import os
+
 logger = init_logger(__name__)
 
 
@@ -69,6 +71,11 @@ class KVCacheManager:
         # is finished.
         self.req_to_blocks: Dict[str, List[KVCacheBlock]] = {}
 
+        self.prefill_only_block = KVCacheBlock()
+        self.prefill_only_block.incr_ref()
+        self.prefill_only_block.block_id = -1
+        self.prefill_only_block.block_hash = BlockHashType(0, tuple(), None)
+
     def get_computed_blocks(self, request: Request) -> List[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
         Note that the computed blocks must be full.
@@ -125,6 +132,11 @@ class KVCacheManager:
         req_blocks = self.req_to_blocks[request.request_id]
 
         num_new_blocks = num_required_blocks - len(req_blocks)
+
+        if "PREFILL_ONLY" in os.environ:
+            new_blocks = [self.prefill_only_block] * num_new_blocks
+            return new_blocks
+
         if num_new_blocks > self.free_block_queue.num_free_blocks:
             # Need to allocate new blocks due to insufficient pre-allocated
             # slots, but we cannot allocate new blocks due to the limit.
@@ -207,6 +219,14 @@ class KVCacheManager:
                                             if blk.ref_cnt == 0)
 
         num_required_blocks = cdiv(num_tokens, self.block_size)
+
+        if "PREFILL_ONLY" in os.environ:
+
+            # bypasss 
+            new_blocks = [self.prefill_only_block] * num_required_blocks
+            self.req_to_blocks[request.request_id] = computed_blocks + new_blocks
+            return new_blocks
+
         if (num_required_blocks > self.free_block_queue.num_free_blocks -
                 num_evictable_computed_blocks):
             # Cannot allocate new blocks.
