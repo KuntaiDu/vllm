@@ -613,6 +613,8 @@ class LlamaForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
         inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
 
+        print("Forward with input_ids shape ", input_ids.shape)
+
         profile_flag =  ("PROFILE" in os.environ)
 
         if profile_flag:

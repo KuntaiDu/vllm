@@ -243,6 +243,8 @@ def use_cascade_attention(
     given configuration, and 2) heuristically decides whether using cascade
     attention can improve performance.
     """
+
+    
     # Too short common prefix. Probably not worth using cascade attention.
     # We use an arbitrary threshold of 256 tokens. TODO: Tune this threshold.
     # NOTE(woosuk): This is the common case. We should return False as soon as
@@ -257,6 +259,8 @@ def use_cascade_attention(
     num_reqs = len(query_lens)
     if num_reqs < 8:
         return False
+
+    
 
     # Heuristics to decide whether using cascade attention is beneficial.
     # 1. When FlashDecoding is not used for normal attention, cascade attention

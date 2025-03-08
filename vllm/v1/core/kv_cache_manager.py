@@ -71,10 +71,10 @@ class KVCacheManager:
         # is finished.
         self.req_to_blocks: Dict[str, List[KVCacheBlock]] = {}
 
-        self.prefill_only_block = KVCacheBlock()
-        self.prefill_only_block.incr_ref()
-        self.prefill_only_block.block_id = -1
-        self.prefill_only_block.block_hash = BlockHashType(0, tuple(), None)
+        # self.prefill_only_block = KVCacheBlock()
+        # self.prefill_only_block.incr_ref()
+        # self.prefill_only_block.block_id = -1
+        # self.prefill_only_block.block_hash = BlockHashType(0, tuple(), None)
 
     def get_computed_blocks(self, request: Request) -> List[KVCacheBlock]:
         """Get the computed (cached) blocks for the request.
