@@ -13,9 +13,7 @@ import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (get_kv_connector, 
-                                                          KVConnectorRole,
-                                                          KVConnectorBase)
+from vllm.distributed import get_kv_connector_agent
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionMetadata
@@ -106,7 +104,7 @@ def set_forward_context(attn_metadata: Any,
         dp_metadata=dp_metadata)
 
     if attn_metadata is not None:
-        kv_connector = get_kv_connector(KVConnectorRole.WORKER)
+        kv_connector = get_kv_connector_agent().worker_connector()
         kv_connector.start_load_kv(_forward_context)
 
     try:

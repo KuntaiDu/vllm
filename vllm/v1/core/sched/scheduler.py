@@ -25,9 +25,7 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (init_kv_connector, 
-                                                          get_kv_connector,
-                                                          KVConnectorRole)
+from vllm.distributed import get_kv_connector_agent
 
 
 logger = init_logger(__name__)
@@ -458,7 +456,7 @@ class Scheduler(SchedulerInterface):
             grammar_bitmask=grammar_bitmask,
         )
 
-        get_kv_connector(KVConnectorRole.SCHEDULER).attach_connector_meta(
+        get_kv_connector_agent(KVConnectorRole.SCHEDULER).attach_connector_meta(
             scheduler_output)
 
         # Advance the number of computed tokens for the request AFTER

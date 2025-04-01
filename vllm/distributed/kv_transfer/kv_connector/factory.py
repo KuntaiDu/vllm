@@ -4,6 +4,14 @@ import importlib
 from typing import TYPE_CHECKING, Callable, Dict, Type
 
 from .base import KVConnectorBase
+import vllm.envs as envs
+
+# NOTE(Kuntai): We prefer not to directly the classes with "_V1" suffix.
+# This makes it easier for us to deprecate code in v0 (which will happen soon).
+from vllm.distributed.kv_transfer.kv_connector.v1 import (
+    KVConnectorRole as KVConnectorRole_V1,
+    KVConnectorBase as KVConnectorBase_V1,
+    RoleToKVConnector as RoleToKVConnector_V1)
 
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
@@ -33,7 +41,35 @@ class KVConnectorFactory:
             raise ValueError(f"Unsupported connector type: {connector_name}")
 
         connector_cls = cls._registry[connector_name]()
-        return connector_cls(rank, local_rank, config)
+
+        if envs.VLLM_USE_V1:
+            # NOTE(Kuntai): v1 connector is explicitly seperated into two roles.
+            # Scheduler connector:
+            # - Co-colate with scheduler process
+            # - Should only be used inside the Scheduler class
+            # Worker connector:
+            # - Co-locate with worker process
+            # - Should only be used inside the forward context & attention layer
+            # We build these two connectors separately to enforce strict 
+            # separation
+            scheduler_connector = connector_cls(
+                role=KVConnectorRole_V1.SCHEDULER,
+                rank=rank,
+                local_rank=local_rank,
+                config=config,
+            )
+            worker_connector = connector_cls(
+                role=KVConnectorRole_V1.WORKER,
+                rank=rank,
+                local_rank=local_rank,
+                config=config,
+            )
+            return RoleToKVConnector_V1(
+                scheduler_connector=scheduler_connector,
+                worker_connector=worker_connector,
+            )
+        else:
+            return connector_cls(rank, local_rank, config)
 
 
 # Register various connectors here.
@@ -58,3 +94,8 @@ KVConnectorFactory.register_connector(
     "MooncakeStoreConnector",
     "vllm.distributed.kv_transfer.kv_connector.mooncake_store_connector",
     "MooncakeStoreConnector")
+
+KVConnectorFactory.register_connector(
+    "SharedStorageConnector",
+    "vllm.distributed.kv_transfer.kv_connector.v1.shared_storage_connector",
+    "SharedStorageConnector")

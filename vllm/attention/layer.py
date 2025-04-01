@@ -19,8 +19,7 @@ from vllm.platforms import _Backend, current_platform
 from vllm.utils import direct_register_custom_op
 
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (get_kv_connector, 
-                                                          KVConnectorRole)
+from vllm.distributed import get_kv_connector_agent
 
 class Attention(nn.Module):
     """Attention layer.
@@ -182,7 +181,7 @@ class Attention(nn.Module):
         context using
         `vllm.forward_context.get_forward_context().attn_metadata`.
         """
-        get_kv_connector(KVConnectorRole.WORKER).wait_for_layer_load(
+        get_kv_connector_agent().worker_connector().wait_for_layer_load(
                 self.layer_name)
         if self.calculate_kv_scales:
             attn_metadata = get_forward_context().attn_metadata
@@ -349,7 +348,7 @@ def save_kv_layer_to_connector(
     if attn_metadata is None:
         return
 
-    connector = get_kv_connector(KVConnectorRole.WORKER)
+    connector = get_kv_connector_agent().worker_connector()
     if connector is None:
         return
 

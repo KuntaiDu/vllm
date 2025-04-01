@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from vllm.v1.core.kv_cache_utils import KVCacheBlock
     from vllm.v1.core.kv_cache_manager import KVCacheManager
     from vllm.v1.request import Request
-
+    from vllm.config import VllmConfig
 
 class KVConnectorRole(enum.Enum):
     # Connector running in the scheduler process
@@ -28,19 +28,28 @@ class KVConnectorRole(enum.Enum):
     # Connector running in the worker process
     WORKER = 1
 
+
 class KVConnectorBase(ABC):
-    def __init__(self, role: KVConnectorRole):
+    def __init__(
+        self,
+        rank: int,
+        local_rank: int,
+        config: "VllmConfig",
+        role: V1KVConnectorRole):
         self._role = role
         self._connector_metada = None
+        self._rank = rank
+        self._local_rank = local_rank
+        self._config = config
         
 
     @property
-    def role(self) -> KVConnectorRole:
+    def role(self) -> V1KVConnectorRole:
         return self._role
 
     def bind_connector_metadata(
             self, 
-            connector_metadata: "ConnectorMetadata") -> None:
+            connector_metadata: "V1KVConnectorMetadata") -> None:
         """Set the connector metadata from the scheduler.
 
         This function should be called by the model runner every time 
@@ -73,6 +82,7 @@ class KVConnectorBase(ABC):
     # ==============================
     # Worker-side methods
     # ==============================
+
     @abstractmethod
     def start_load_kv(
             self, 
@@ -180,3 +190,20 @@ class KVConnectorBase(ABC):
         """
         pass
 
+
+class RoleToKVConnector:
+
+    def __init__(
+        self,
+        scheduler_connector: KVConnectorBase,
+        worker_connector: KVConnectorBase,
+    ):
+        self._scheduler_connector = scheduler_connector
+        self._worker_connector = worker_connector
+
+    
+    def worker_connector(self) -> KVConnectorBase:
+        return self._worker_connector
+
+    def scheduler_connector(self) -> KVConnectorBase:
+        return self._scheduler_connector

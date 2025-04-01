@@ -42,7 +42,7 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 from vllm.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
 
 from vllm.distributed.kv_transfer.v1.kv_connector import (init_kv_connector, 
-                                                          get_kv_connector,
+                                                          get_kv_connector_agent,
                                                           KVConnectorRole)
 
 if TYPE_CHECKING:
@@ -1041,7 +1041,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             })
 
         # Update the connector's state with the metadata in scheduler output.
-        get_kv_connector(KVConnectorRole.WORKER).bind_connector_metadata(
+        get_kv_connector_agent(KVConnectorRole.WORKER).bind_connector_metadata(
                 scheduler_output.connector_metadata
         )
 
@@ -1063,7 +1063,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         logits = self.model.compute_logits(sample_hidden_states, None)
 
         # Clear connector's state
-        get_kv_connector(KVConnectorRole.WORKER).clear_connector_metadata()
+        get_kv_connector_agent(KVConnectorRole.WORKER).clear_connector_metadata()
 
         # Apply structured output bitmasks if present
         if scheduler_output.grammar_bitmask is not None:

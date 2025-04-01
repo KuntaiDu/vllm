@@ -37,7 +37,6 @@ import torch
 import torch.distributed
 from torch.distributed import Backend, ProcessGroup
 
-import vllm.distributed.kv_transfer.kv_transfer_agent as kv_transfer
 import vllm.envs as envs
 from vllm.distributed.device_communicators.base_device_communicator import (
     DeviceCommunicatorBase)
@@ -48,6 +47,8 @@ from vllm.utils import (direct_register_custom_op, resolve_obj_by_qualname,
 
 if TYPE_CHECKING:
     from vllm.config import VllmConfig
+    from vllm.distributed.kv_transfer.kv_connector.kv_connector_agent import (
+        KVConnectorAgent)
 
 
 @dataclass
@@ -767,13 +768,13 @@ def get_pp_group() -> GroupCoordinator:
 # kept for backward compatibility
 get_pipeline_model_parallel_group = get_pp_group
 
-_KV_TRANSFER: Optional[kv_transfer.KVTransferAgent] = None
+_KV_CONNECTOR_AGENT: Optional["KVConnectorAgent"] = None
 
 
-def get_kv_transfer_group() -> kv_transfer.KVTransferAgent:
-    assert _KV_TRANSFER is not None, (
+def get_kv_connector_agent() -> "KVConnectorAgent":
+    assert _KV_CONNECTOR_AGENT is not None, (
         "disaggregated KV cache transfer parallel group is not initialized")
-    return _KV_TRANSFER
+    return _KV_CONNECTOR_AGENT
 
 
 @contextmanager
@@ -962,16 +963,17 @@ def ensure_kv_transfer_initialized(vllm_config: "VllmConfig") -> None:
     Initialize KV cache transfer parallel group.
     """
 
-    global _KV_TRANSFER
+    global _KV_CONNECTOR_AGENT
 
     if vllm_config.kv_transfer_config is None:
         return
 
     if all([
             vllm_config.kv_transfer_config.is_kv_transfer_instance,
-            _KV_TRANSFER is None
+            _KV_CONNECTOR_AGENT is None
     ]):
-        _KV_TRANSFER = kv_transfer.KVTransferAgent(
+        import vllm.distributed.kv_transfer.kv_connector_agent as kv_connector_agent
+        _KV_CONNECTOR_AGENT = kv_connector_agent.KVConnectorAgent(
             rank=get_world_group().rank,
             local_rank=get_world_group().local_rank,
             config=vllm_config)

@@ -3,9 +3,10 @@ import os
 from typing import TYPE_CHECKING
 import torch
 import hashlib
-from vllm.distributed.kv_transfer.v1.kv_connector.base import (KVConnectorBase,
-                                                               KVConnectorRole)
-
+from vllm.distributed.kv_transfer.kv_connector.v1.base import (
+    KVConnectorBase, KVConnectorRole)
+from vllm.config import VllmConfig
+from vllm.distributed.kv_transfer.kv_connector.base import KVConnectorBase
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.logger import init_logger
 
@@ -49,7 +50,7 @@ class ReqMeta:
         )
 
 @dataclass
-class NativeConnectorMetadata:
+class SharedStorageConnectorMetadata:
     requests: list[ReqMeta]
 
     def __init__(self):
@@ -63,7 +64,7 @@ class NativeConnectorMetadata:
         ) -> None:
         self.requests.append(ReqMeta.from_request(request, block_size, is_store))
 
-class NativeKVConnector(KVConnectorBase):
+class SharedStorageConnector(KVConnectorBase):
     # NOTE: This is just a simple debug implementation of the KV connector.
     # It save / load the KV cache to / from the disk.
     # It does extra work which will overwrite the existing prefix-cache in GPU
@@ -71,9 +72,16 @@ class NativeKVConnector(KVConnectorBase):
 
     def __init__(self, 
                  role: KVConnectorRole,
-                 block_size: int):
-        super().__init__(role)
-        self._block_size = block_size
+                 rank: int,
+                 local_rank: int,
+                 config: "VllmConfig"):
+        super().__init__(
+            role=role,
+            rank=rank,
+            local_rank=local_rank,
+            config=config,
+        )
+        self._block_size = config.cache_config.block_size
         self._requests_need_load = []
 
     def start_load_kv(
@@ -117,7 +125,8 @@ class NativeKVConnector(KVConnectorBase):
 
         logger.info("Start loading KV cache from the connector")    
         # Get the metadata
-        metadata: NativeConnectorMetadata = self._get_connector_metadata()
+        metadata: SharedStorageConnectorMetadata = \
+            self._get_connector_metadata()
         if metadata is None:
             logger.warning("In connector.start_load_kv, but the connector metadata is None")
             return

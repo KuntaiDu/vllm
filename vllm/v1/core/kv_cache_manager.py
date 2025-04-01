@@ -13,7 +13,7 @@ from vllm.v1.core.kv_cache_utils import (BlockHashType, KVCacheBlock,
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request, RequestStatus
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (get_kv_connector,
+from vllm.distributed.kv_transfer.v1.kv_connector import (get_kv_connector_agent,
                                                           KVConnectorRole)
 
 logger = init_logger(__name__)
@@ -133,7 +133,7 @@ class KVCacheManager:
                 else:
                     break
 
-            computed_blocks = get_kv_connector(KVConnectorRole.SCHEDULER).\
+            computed_blocks = get_kv_connector_agent(KVConnectorRole.SCHEDULER).\
                     get_external_prefix_cache_blocks(
                     request, computed_blocks, len(computed_blocks) * self.block_size,
                     self)

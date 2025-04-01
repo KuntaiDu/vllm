@@ -15,15 +15,20 @@ import torch
 
 from vllm.distributed.kv_transfer.kv_connector.factory import (
     KVConnectorFactory)
+from vllm.distributed.kv_transfer.kv_connector.v1 import (
+    KVConnectorBase as KVConnectorBase_V1)
 from vllm.logger import init_logger
 from vllm.sequence import IntermediateTensors
 
 logger = init_logger(__name__)
 
 
-class KVTransferAgent:
+class KVConnectorAgent:
     """
     A class designated for distributed KV transfer
+
+    This class currently only wraps one KV connector. But in the future, it may
+    wrap multiple connectors to support more use cases.
     
     Target use cases:
         1. Disaggregated prefill
@@ -74,3 +79,13 @@ class KVTransferAgent:
 
         return self.connector.recv_kv_caches_and_hidden_states(
             model_executable, model_input, kv_caches)
+
+
+    def worker_connector(self) -> KVConnectorBase_V1:
+        return self.connector.worker_connector()
+
+    def scheduler_connector(self) -> KVConnectorBase_V1:
+        return self.connector.scheduler_connector()
+
+
+
