@@ -6,7 +6,6 @@ import hashlib
 from vllm.distributed.kv_transfer.kv_connector.v1.base import (
     KVConnectorBase, KVConnectorRole)
 from vllm.config import VllmConfig
-from vllm.distributed.kv_transfer.kv_connector.base import KVConnectorBase
 from vllm.v1.core.sched.output import SchedulerOutput
 from vllm.logger import init_logger
 
@@ -71,15 +70,15 @@ class SharedStorageConnector(KVConnectorBase):
     # - to remove the overhead, need to add some "mask" in the ReqMeta class
 
     def __init__(self, 
-                 role: KVConnectorRole,
                  rank: int,
                  local_rank: int,
-                 config: "VllmConfig"):
+                 config: "VllmConfig",
+                 role: KVConnectorRole):
         super().__init__(
-            role=role,
             rank=rank,
             local_rank=local_rank,
             config=config,
+            role=role,
         )
         self._block_size = config.cache_config.block_size
         self._requests_need_load = []
@@ -287,7 +286,7 @@ class SharedStorageConnector(KVConnectorBase):
         Args:
             scheduler_output (SchedulerOutput): the scheduler output object.
         """
-        meta = NativeConnectorMetadata()
+        meta = SharedStorageConnectorMetadata()
         for request in scheduler_output.scheduled_new_reqs:
             # T^T, why there is both req_id and request_id????
             if request.req_id in self._requests_need_load:

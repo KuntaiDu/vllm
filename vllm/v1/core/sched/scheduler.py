@@ -25,7 +25,6 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
 
-from vllm.distributed import get_kv_connector_agent
 
 
 logger = init_logger(__name__)
@@ -35,6 +34,7 @@ class Scheduler(SchedulerInterface):
 
     def __init__(
         self,
+        vllm_config: VllmConfig,
         scheduler_config: SchedulerConfig,
         model_config: ModelConfig,
         cache_config: CacheConfig,
@@ -45,6 +45,7 @@ class Scheduler(SchedulerInterface):
         include_finished_set: bool = False,
         log_stats: bool = False,
     ) -> None:
+        self.vllm_config = vllm_config
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
         self.lora_config = lora_config
@@ -64,6 +65,16 @@ class Scheduler(SchedulerInterface):
             self.scheduler_config.max_num_batched_tokens
         self.max_model_len = self.scheduler_config.max_model_len
 
+        # create connector
+        from vllm.distributed.kv_transfer.kv_connector.factory import (
+            KVConnectorFactory)
+        from vllm.distributed.kv_transfer.kv_connector.v1 import (
+            KVConnectorRole as KVConnectorRole_V1)
+        self.connector = KVConnectorFactory.create_connector(
+            rank=None, local_rank=None, config=self.vllm_config,
+            role=KVConnectorRole_V1.SCHEDULER
+        )
+
         num_gpu_blocks = cache_config.num_gpu_blocks
         assert isinstance(num_gpu_blocks, int) and num_gpu_blocks > 0
         # Create the KV cache manager.
@@ -74,7 +85,8 @@ class Scheduler(SchedulerInterface):
             sliding_window=self.cache_config.sliding_window,
             enable_caching=self.cache_config.enable_prefix_caching,
             caching_hash_algo=self.cache_config.prefix_caching_hash_algo,
-            log_stats=self.log_stats)
+            log_stats=self.log_stats,
+            connector=self.connector)
         self.block_size = self.cache_config.block_size
 
         # req_id -> Request
@@ -119,8 +131,7 @@ class Scheduler(SchedulerInterface):
             cache_size=encoder_cache_size)
 
 
-        # TODO(ApostaC): Add initialization control for connector
-        init_kv_connector(KVConnectorRole.SCHEDULER, cache_config=cache_config)
+        
 
     def schedule(self) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
@@ -456,8 +467,11 @@ class Scheduler(SchedulerInterface):
             grammar_bitmask=grammar_bitmask,
         )
 
-        get_kv_connector_agent(KVConnectorRole.SCHEDULER).attach_connector_meta(
-            scheduler_output)
+        # NOTE(Kuntai): this function is designed for multiple purposes:
+        # 1. Plan the KV cache store
+        # 2. Wrap up all the KV cache load / save ops into an opaque object
+        # 3. Clear the internal states of the connector
+        self.connector.attach_connector_meta(scheduler_output)
 
         # Advance the number of computed tokens for the request AFTER
         # the request is scheduled.

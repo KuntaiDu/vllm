@@ -1,4 +1,5 @@
 from vllm import LLM, SamplingParams
+from vllm.config import KVTransferConfig
 
 context = "Hi " * 1000
 context2 = "Hey " * 500
@@ -11,10 +12,19 @@ prompts = [
 
 sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens = 1)
 
-llm = LLM(model="meta-llama/llama-3.1-8b-instruct", enforce_eager=True, gpu_memory_utilization=0.8) #, max_model_len=2048, max_num_batched_tokens=2048)
+llm = LLM(
+    model="meta-llama/llama-3.1-8b-instruct", 
+    enforce_eager=True, 
+    gpu_memory_utilization=0.8,
+    kv_transfer_config=KVTransferConfig.from_cli(
+        '{"kv_connector":"SharedStorageConnector","kv_role":"kv_both"}'
+    )) #, max_model_len=2048, max_num_batched_tokens=2048)
 
 # 1ST generation (prefill instance)
-outputs = llm.generate(prompts, sampling_params)
+outputs = llm.generate(
+    prompts,
+    sampling_params,
+)
 
 new_prompts = []
 for output in outputs:

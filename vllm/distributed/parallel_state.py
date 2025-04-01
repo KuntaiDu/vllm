@@ -771,7 +771,7 @@ get_pipeline_model_parallel_group = get_pp_group
 _KV_CONNECTOR_AGENT: Optional["KVConnectorAgent"] = None
 
 
-def get_kv_connector_agent() -> "KVConnectorAgent":
+def get_kv_connector() -> "KVConnectorAgent":
     assert _KV_CONNECTOR_AGENT is not None, (
         "disaggregated KV cache transfer parallel group is not initialized")
     return _KV_CONNECTOR_AGENT
@@ -972,12 +972,21 @@ def ensure_kv_transfer_initialized(vllm_config: "VllmConfig") -> None:
             vllm_config.kv_transfer_config.is_kv_transfer_instance,
             _KV_CONNECTOR_AGENT is None
     ]):
-        import vllm.distributed.kv_transfer.kv_connector_agent as kv_connector_agent
-        _KV_CONNECTOR_AGENT = kv_connector_agent.KVConnectorAgent(
-            rank=get_world_group().rank,
-            local_rank=get_world_group().local_rank,
-            config=vllm_config)
-
+        from vllm.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
+        from vllm.distributed.kv_transfer.kv_connector.v1 import (
+            KVConnectorRole as KVConnectorRole_V1)
+        
+        kwargs = {
+            "rank": get_world_group().rank,
+            "local_rank": get_world_group().local_rank,
+            "config": vllm_config,
+        }
+        if envs.VLLM_USE_V1:
+            # NOTE(Kuntai):
+            # Parallel state is initialized in v1 worker,
+            # so this connector is for sure worker connector.
+            kwargs["role"] = KVConnectorRole_V1.WORKER
+        _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(**kwargs)
 
 def ensure_model_parallel_initialized(
     tensor_model_parallel_size: int,

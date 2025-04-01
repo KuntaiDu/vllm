@@ -1,9 +1,8 @@
-from vllm.distributed.kv_transfer.v1.kv_connector.base import (
-    KVConnectorRole, KVConnectorBase, RoleToKVConnector)
+from vllm.distributed.kv_transfer.kv_connector.v1.base import (
+    KVConnectorRole, KVConnectorBase)
 
 __all__ = [
     "KVConnectorRole",
     "KVConnectorBase",
-    "RoleToKVConnector",
 ]
 

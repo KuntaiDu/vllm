@@ -13,9 +13,6 @@ from vllm.v1.core.kv_cache_utils import (BlockHashType, KVCacheBlock,
 from vllm.v1.metrics.stats import PrefixCacheStats
 from vllm.v1.request import Request, RequestStatus
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (get_kv_connector_agent,
-                                                          KVConnectorRole)
-
 logger = init_logger(__name__)
 
 
@@ -31,6 +28,7 @@ class KVCacheManager:
         caching_hash_algo: str = "builtin",
         num_preallocate_tokens: int = 64,
         log_stats: bool = False,
+        connector = None,
     ) -> None:
         self.block_size = block_size
         self.num_gpu_blocks = num_gpu_blocks
@@ -74,6 +72,7 @@ class KVCacheManager:
         # data for reempted ones.
         self.num_cached_block: dict[str, int] = {}
         self.prefix_cache_stats = PrefixCacheStats()
+        self.connector = connector
 
     @property
     def usage(self) -> float:
@@ -133,8 +132,7 @@ class KVCacheManager:
                 else:
                     break
 
-            computed_blocks = get_kv_connector_agent(KVConnectorRole.SCHEDULER).\
-                    get_external_prefix_cache_blocks(
+            computed_blocks = self.connector.get_external_prefix_cache_blocks(
                     request, computed_blocks, len(computed_blocks) * self.block_size,
                     self)
             

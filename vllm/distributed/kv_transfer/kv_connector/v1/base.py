@@ -35,21 +35,20 @@ class KVConnectorBase(ABC):
         rank: int,
         local_rank: int,
         config: "VllmConfig",
-        role: V1KVConnectorRole):
-        self._role = role
+        role: KVConnectorRole):
         self._connector_metada = None
         self._rank = rank
         self._local_rank = local_rank
         self._config = config
-        
+        self._role = role
 
     @property
-    def role(self) -> V1KVConnectorRole:
+    def role(self) -> KVConnectorRole:
         return self._role
 
     def bind_connector_metadata(
             self, 
-            connector_metadata: "V1KVConnectorMetadata") -> None:
+            connector_metadata: "KVConnectorMetadata") -> None:
         """Set the connector metadata from the scheduler.
 
         This function should be called by the model runner every time 
@@ -69,7 +68,7 @@ class KVConnectorBase(ABC):
         """
         self._connector_metada = None
 
-    def _get_connector_metadata(self) -> "ConnectorMetadata":
+    def _get_connector_metadata(self) -> "KVConnectorMetadata":
         """Get the connector metadata.
 
         This function should only be called inside the connector.
@@ -190,20 +189,3 @@ class KVConnectorBase(ABC):
         """
         pass
 
-
-class RoleToKVConnector:
-
-    def __init__(
-        self,
-        scheduler_connector: KVConnectorBase,
-        worker_connector: KVConnectorBase,
-    ):
-        self._scheduler_connector = scheduler_connector
-        self._worker_connector = worker_connector
-
-    
-    def worker_connector(self) -> KVConnectorBase:
-        return self._worker_connector
-
-    def scheduler_connector(self) -> KVConnectorBase:
-        return self._scheduler_connector

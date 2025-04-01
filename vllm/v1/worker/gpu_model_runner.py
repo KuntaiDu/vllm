@@ -41,9 +41,7 @@ from vllm.v1.utils import bind_kv_cache
 from vllm.v1.worker.gpu_input_batch import CachedRequestState, InputBatch
 from vllm.v1.worker.lora_model_runner_mixin import LoRAModelRunnerMixin
 
-from vllm.distributed.kv_transfer.v1.kv_connector import (init_kv_connector, 
-                                                          get_kv_connector_agent,
-                                                          KVConnectorRole)
+from vllm.distributed import get_kv_connector
 
 if TYPE_CHECKING:
     import xgrammar as xgr
@@ -268,9 +266,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                                         pin_memory=self.pin_memory)
         self.seq_lens_np = self.seq_lens_cpu.numpy()
 
-
-        # Initialize KV Connector
-        init_kv_connector(KVConnectorRole.WORKER, cache_config=cache_config)
 
     def _update_states(self, scheduler_output: "SchedulerOutput") -> None:
         """Update the cached states and the persistent batch with the scheduler
@@ -1041,7 +1036,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             })
 
         # Update the connector's state with the metadata in scheduler output.
-        get_kv_connector_agent(KVConnectorRole.WORKER).bind_connector_metadata(
+        get_kv_connector().bind_connector_metadata(
                 scheduler_output.connector_metadata
         )
 
@@ -1063,7 +1058,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         logits = self.model.compute_logits(sample_hidden_states, None)
 
         # Clear connector's state
-        get_kv_connector_agent(KVConnectorRole.WORKER).clear_connector_metadata()
+        get_kv_connector().clear_connector_metadata()
 
         # Apply structured output bitmasks if present
         if scheduler_output.grammar_bitmask is not None:
