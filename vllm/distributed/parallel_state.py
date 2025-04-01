@@ -771,7 +771,7 @@ get_pipeline_model_parallel_group = get_pp_group
 _KV_CONNECTOR_AGENT: Optional["KVConnectorAgent"] = None
 
 
-def get_kv_connector() -> "KVConnectorAgent":
+def get_kv_transfer_group() -> "KVConnectorAgent":
     assert _KV_CONNECTOR_AGENT is not None, (
         "disaggregated KV cache transfer parallel group is not initialized")
     return _KV_CONNECTOR_AGENT

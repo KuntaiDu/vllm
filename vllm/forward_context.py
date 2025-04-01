@@ -13,7 +13,7 @@ import vllm.envs as envs
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
 
-from vllm.distributed import get_kv_connector
+from vllm.distributed import get_kv_transfer_group
 from vllm.distributed.kv_transfer.kv_connector.v1 import (
     KVConnectorBase as KVConnectorBase_V1)
 
@@ -108,7 +108,7 @@ def set_forward_context(attn_metadata: Any,
         dp_metadata=dp_metadata)
 
     if attn_metadata is not None:
-        kv_connector = get_kv_connector()
+        kv_connector = get_kv_transfer_group()
         kv_connector.start_load_kv(_forward_context)
 
     try:
