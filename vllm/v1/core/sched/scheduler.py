@@ -25,6 +25,11 @@ from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
 from vllm.v1.structured_output import StructuredOutputManager
 
+from vllm.distributed.kv_transfer.v1.kv_connector import (init_kv_connector, 
+                                                          get_kv_connector,
+                                                          KVConnectorRole)
+
+
 logger = init_logger(__name__)
 
 
@@ -114,6 +119,10 @@ class Scheduler(SchedulerInterface):
         # for these models.
         self.encoder_cache_manager = EncoderCacheManager(
             cache_size=encoder_cache_size)
+
+
+        # TODO(ApostaC): Add initialization control for connector
+        init_kv_connector(KVConnectorRole.SCHEDULER, cache_config=cache_config)
 
     def schedule(self) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
@@ -430,6 +439,7 @@ class Scheduler(SchedulerInterface):
                 resumed_from_preemption=False,
             ) for req in scheduled_running_reqs
         ]
+
         scheduler_output = SchedulerOutput(
             scheduled_new_reqs=new_reqs_data,
             scheduled_cached_reqs=resumed_reqs_data + running_reqs_data,
@@ -447,6 +457,9 @@ class Scheduler(SchedulerInterface):
             structured_output_request_ids=structured_output_request_ids,
             grammar_bitmask=grammar_bitmask,
         )
+
+        get_kv_connector(KVConnectorRole.SCHEDULER).attach_connector_meta(
+            scheduler_output)
 
         # Advance the number of computed tokens for the request AFTER
         # the request is scheduled.
