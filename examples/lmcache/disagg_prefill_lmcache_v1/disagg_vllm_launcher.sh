@@ -15,45 +15,62 @@ else
     MODEL=$2
 fi
 
+if [[ -n "${NSYS_PROFILE:-}" ]]; then
+    echo "NSYS_PROFILE is set, checking if nsys exists..."
+    if command -v nsys >/dev/null 2>&1; then
+        echo "nsys is installed"
+    else
+        echo "nsys is not installed"
+        exit 1
+    fi
+fi
 
+
+# set prefiller / decoder specific variables.
 if [[ $1 == "prefiller" ]]; then
-    # Prefiller listens on port 8100
-    prefill_config_file=$SCRIPT_DIR/configs/lmcache-prefiller-config.yaml
-
-    UCX_TLS=cuda_ipc,cuda_copy,tcp \
-        LMCACHE_CONFIG_FILE=$prefill_config_file \
-        LMCACHE_USE_EXPERIMENTAL=True \
-        VLLM_ENABLE_V1_MULTIPROCESSING=1 \
-        VLLM_WORKER_MULTIPROC_METHOD=spawn \
-        CUDA_VISIBLE_DEVICES=0 \
-        vllm serve $MODEL \
-        --port 8100 \
-        --disable-log-requests \
-        --enforce-eager \
-        --kv-transfer-config \
-        '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_producer","kv_connector_extra_config": {"discard_partial_chunks": false, "lmcache_rpc_port": "producer1"}}'
-
-
+    CONFIG_FILE="$SCRIPT_DIR/configs/lmcache-prefiller-config.yaml"
+    PORT=8100
+    GPU=0
+    ROLE="kv_producer"
+    RPC_PORT="producer1"
+    OUTPUT="prefiller"
 elif [[ $1 == "decoder" ]]; then
-    # Decoder listens on port 8200
-    decode_config_file=$SCRIPT_DIR/configs/lmcache-decoder-config.yaml
-
-    UCX_TLS=cuda_ipc,cuda_copy,tcp \
-        LMCACHE_CONFIG_FILE=$decode_config_file \
-        LMCACHE_USE_EXPERIMENTAL=True \
-        VLLM_ENABLE_V1_MULTIPROCESSING=1 \
-        VLLM_WORKER_MULTIPROC_METHOD=spawn \
-        CUDA_VISIBLE_DEVICES=1 \
-        vllm serve $MODEL \
-        --port 8200 \
-        --disable-log-requests \
-        --enforce-eager \
-        --kv-transfer-config \
-        '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_consumer","kv_connector_extra_config": {"discard_partial_chunks": false, "lmcache_rpc_port": "consumer1"}}'
-
-
+    CONFIG_FILE="$SCRIPT_DIR/configs/lmcache-decoder-config.yaml"
+    PORT=8200
+    GPU=1
+    ROLE="kv_consumer"
+    RPC_PORT="consumer1"
+    OUTPUT="decoder"
 else
     echo "Invalid role: $1"
-    echo "Should be either prefill, decode"
+    echo "Should be either prefiller or decoder"
     exit 1
+fi
+
+export UCX_TLS=cuda_ipc,cuda_copy,tcp
+export LMCACHE_CONFIG_FILE="$CONFIG_FILE"
+export LMCACHE_USE_EXPERIMENTAL=True
+export VLLM_ENABLE_V1_MULTIPROCESSING=1
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+export CUDA_VISIBLE_DEVICES=$GPU
+
+# Base vllm serve command
+VLLM_CMD=(
+    vllm serve "$MODEL"
+    --port "$PORT"
+    --disable-log-requests
+    --enforce-eager
+    --kv-transfer-config
+    "{\"kv_connector\":\"LMCacheConnectorV1\",\"kv_role\":\"$ROLE\",\"kv_connector_extra_config\": {\"discard_partial_chunks\": false, \"lmcache_rpc_port\": \"$RPC_PORT\"}}"
+)
+
+# If NSYS_PROFILE is set, wrap with nsys
+if [[ -n "${NSYS_PROFILE:-}" ]]; then
+    nsys profile \
+        --trace=cuda,nvtx,osrt \
+        --output="$OUTPUT" \
+        --force-overwrite true \
+        "${VLLM_CMD[@]}"
+else
+    "${VLLM_CMD[@]}"
 fi
