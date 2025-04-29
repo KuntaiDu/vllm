@@ -102,21 +102,37 @@ main() {
     decoder_pid=$!
     PIDS+=($decoder_pid)
 
+    bash disagg_dynamo_launcher.sh prefiller2  \
+        > >(tee decoder.log)  2>&1 &
+    decoder_pid=$!
+    PIDS+=($decoder_pid)
+
     wait_for_server 8080
     wait_for_server 8090
+    wait_for_server 8100
 
     # Establish nixl conn
     curl -kvvv -XPOST http://127.0.0.1:8080/add_remote_prefill_eps  -H "Content-Type: application/json" -d '{"endpoints":["http://127.0.0.1:8090"]}'
+    curl -kvvv -XPOST http://127.0.0.1:8080/add_remote_prefill_eps  -H "Content-Type: application/json" -d '{"endpoints":["http://127.0.0.1:8100"]}'
 
     echo "All servers are up. Starting benchmark..."
 
 
     # begin benchmark
-    python benchmark_serving.py --port 8080 --seed $(date +%s) \
-        --model meta-llama/Llama-3.1-8B-Instruct \
-        --dataset-name random --random-input-len 7500 --random-output-len 200 \
-        --num-prompts 200 --burstiness 100 --request-rate 3.6 \
-        --backend openai-chat --endpoint /v1/chat/completions | tee benchmark.log
+    # python benchmark_serving.py --port 8080 --seed $(date +%s) \
+    #     --model meta-llama/Llama-3.1-8B-Instruct \
+    #     --dataset-name random --random-input-len 7500 --random-output-len 200 \
+    #     --num-prompts 200 --burstiness 100 --request-rate 3.6 \
+    #     --backend openai-chat --endpoint /v1/chat/completions | tee benchmark.log
+
+    # 1P1D dynamo
+    # python3 benchmark_serving.py --port 8080 --seed $(date +%s) \
+    #     --model meta-llama/Llama-3.1-8B-Instruct \
+    #     --dataset-name random --random-input-len 8000 --random-output-len 200 \
+    #     --num-prompts 200 --burstiness 100 --request-rate 3.6 --metric-percentiles 95 --backend openai-chat --endpoint /v1/chat/completions --ignore-eos | tee benchmark.log
+
+    # 2P1D dynamo
+    python3 benchmark_serving.py --port 8080 --seed $(date +%s)         --model meta-llama/Llama-3.1-8B-Instruct         --dataset-name random --random-input-len 10000 --random-output-len 100         --num-prompts 250 --burstiness 100 --request-rate 5.5 --metric-percentiles 95 --backend openai-chat --endpoint /v1/chat/completions --ignore-eos | tee benchmark.log
 
     echo "Benchmarking done. Cleaning up..."
 

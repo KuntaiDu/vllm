@@ -41,6 +41,10 @@ if [[ $1 == "prefiller" ]]; then
     PORT=8090
     GPU=0
     OUTPUT=prefiller
+elif [[ $1 == "prefiller2" ]]; then
+    PORT=8100
+    GPU=2
+    OUTPUT=prefiller
 elif [[ $1 == "decoder" ]]; then
     PORT=8080
     GPU=1
