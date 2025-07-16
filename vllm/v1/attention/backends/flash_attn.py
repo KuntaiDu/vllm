@@ -4,6 +4,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
+import os
+
 import numpy as np
 import torch
 
@@ -541,6 +543,69 @@ class FlashAttentionImpl(AttentionImpl):
                 scheduler_metadata = attn_metadata.scheduler_metadata
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
+
+            breakpoint()
+
+            if os.environ.get("SIMULATE_DUO_ATTENTION"):
+                # half of the heads do full attention
+                q_heads = query.shape[1] // 2
+                query = query[:, :q_heads, :]
+                k_heads = key_cache.shape[1] // 2
+                key_cache = key_cache[:, :k_heads, ...]
+                v_heads = value_cache.shape[1] // 2
+                value_cache = value_cache[:, :v_heads, ...]
+                out_heads = output.shape[1] // 2
+
+                flash_attn_varlen_func(
+                    q=query[:num_actual_tokens],
+                    k=key_cache,
+                    v=value_cache,
+                    out=output[:num_actual_tokens, :out_heads, :],
+                    cu_seqlens_q=cu_seqlens_q,
+                    max_seqlen_q=max_seqlen_q,
+                    seqused_k=seqused_k,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    window_size=self.sliding_window,
+                    block_table=block_table,
+                    softcap=self.logits_soft_cap,
+                    scheduler_metadata=scheduler_metadata,
+                    fa_version=self.vllm_flash_attn_version,
+                    q_descale=layer._q_scale.expand(descale_shape),
+                    k_descale=layer._k_scale.expand(descale_shape),
+                    v_descale=layer._v_scale.expand(descale_shape),
+                    num_splits=attn_metadata.max_num_splits,
+                )
+
+                # the other half do sliding window attention
+                flash_attn_varlen_func(
+                    q=query[:num_actual_tokens],
+                    k=key_cache,
+                    v=value_cache,
+                    out=output[:num_actual_tokens, :out_heads, :],
+                    cu_seqlens_q=cu_seqlens_q,
+                    max_seqlen_q=max_seqlen_q,
+                    seqused_k=seqused_k,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    # in duo attention, it keeps 128 tokens at head 
+                    # and 256 tokens at tail. So total 384 tokens.
+                    window_size=(384-1, 1),
+                    block_table=block_table,
+                    softcap=self.logits_soft_cap,
+                    scheduler_metadata=scheduler_metadata,
+                    fa_version=self.vllm_flash_attn_version,
+                    q_descale=layer._q_scale.expand(descale_shape),
+                    k_descale=layer._k_scale.expand(descale_shape),
+                    v_descale=layer._v_scale.expand(descale_shape),
+                    num_splits=attn_metadata.max_num_splits,
+                )
+                
+                return output
 
             flash_attn_varlen_func(
                 q=query[:num_actual_tokens],
