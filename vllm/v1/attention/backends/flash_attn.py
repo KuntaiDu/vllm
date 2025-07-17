@@ -544,8 +544,6 @@ class FlashAttentionImpl(AttentionImpl):
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
-            breakpoint()
-
             if os.environ.get("SIMULATE_DUO_ATTENTION"):
                 # half of the heads do full attention
                 q_heads = query.shape[1] // 2
